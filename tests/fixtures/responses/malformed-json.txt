@@ -1,0 +1,6 @@
+```json
+[
+  { "severity": "high", "file": "src/foo.ts", "line": 10,
+  BROKEN JSON HERE
+]
+```

@@ -1,0 +1,29 @@
+diff --git a/src/utils/format.ts b/src/utils/format.ts
+index 1234567..abcdefg 100644
+--- a/src/utils/format.ts
++++ b/src/utils/format.ts
+@@ -1,5 +1,10 @@
+ export function formatDate(date: Date): string {
+-  return date.toISOString();
++  return date.toLocaleDateString('en-US', {
++    year: 'numeric',
++    month: 'long',
++    day: 'numeric',
++  });
+ }
++
++export function formatCurrency(amount: number, currency = 'USD'): string {
++  return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount);
++}
+diff --git a/src/utils/math.ts b/src/utils/math.ts
+index 2345678..bcdefgh 100644
+--- a/src/utils/math.ts
++++ b/src/utils/math.ts
+@@ -1,3 +1,7 @@
+ export function clamp(value: number, min: number, max: number): number {
+   return Math.min(Math.max(value, min), max);
+ }
++
++export function roundTo(value: number, decimals: number): number {
++  return Math.round(value * 10 ** decimals) / 10 ** decimals;
++}

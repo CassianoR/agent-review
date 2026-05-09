@@ -1,0 +1,18 @@
+[
+  {
+    "severity": "critical",
+    "file": "src/auth/login.ts",
+    "line": 42,
+    "category": "injection",
+    "description": "User input is directly interpolated into the SQL query without parameterization, enabling SQL injection.",
+    "suggestion": "Use parameterized queries: db.query('SELECT * FROM users WHERE id = $1', [userId])"
+  },
+  {
+    "severity": "high",
+    "file": "src/config/secrets.ts",
+    "line": 7,
+    "category": "secrets",
+    "description": "Hardcoded API key committed to source code.",
+    "suggestion": "Remove the hardcoded key and load from environment variable: process.env.API_KEY"
+  }
+]

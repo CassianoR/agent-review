@@ -1,0 +1,17 @@
+diff --git a/src/auth/login.ts b/src/auth/login.ts
+index 1234567..abcdefg 100644
+--- a/src/auth/login.ts
++++ b/src/auth/login.ts
+@@ -1,6 +1,12 @@
+ import { db } from '../db';
+
++const API_KEY = 'sk-prod-abc123secretkey456789';
++
+ export async function loginUser(email: string, password: string) {
+-  const user = await db.findUser(email);
++  // WARNING: direct string interpolation — SQL injection risk
++  const query = `SELECT * FROM users WHERE email = '${email}' AND password = '${password}'`;
++  const user = await db.raw(query);
+   if (!user) throw new Error('Invalid credentials');
+   return user;
+ }
