@@ -1,4 +1,16 @@
 import { describe, it, expect, vi } from 'vitest';
+
+// ── Mock createProvider so orchestrator tests don't need a real API key ───────
+
+vi.mock('../src/providers/index.js', () => ({
+  createProvider: () => ({
+    complete: vi.fn().mockResolvedValue({
+      content: '[]',
+      usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, estimatedCostUsd: 0 },
+    }),
+  }),
+}));
+
 import { runAgents } from '../src/orchestrator.js';
 import type { Agent } from '../src/agents/base.js';
 import type { AgentResult, Diff, RunConfig } from '../src/types.js';
@@ -29,6 +41,7 @@ function makeConfig(): RunConfig {
     failOn: 'critical',
     apiKey: 'sk-test',
     promptsDir: '/prompts',
+    providerName: 'anthropic',
   };
 }
 

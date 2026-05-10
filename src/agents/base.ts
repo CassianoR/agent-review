@@ -1,9 +1,10 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import micromatch from 'micromatch';
-import type { AgentConfig, AgentResult, Diff, DiffFile, Finding, TokenUsage } from '../types.js';
-import { FindingSchema, FindingsArraySchema, computeCost, zeroUsage } from '../types.js';
+import type { AgentConfig, AgentResult, Diff, DiffFile, Finding } from '../types.js';
+import { FindingSchema, FindingsArraySchema, zeroUsage } from '../types.js';
+import { AnthropicProvider } from '../providers/anthropic.js';
+import type { LLMProvider } from '../providers/base.js';
 
 // ── Public interface ──────────────────────────────────────────────────────────
 
@@ -24,8 +25,18 @@ export abstract class BaseAgent implements Agent {
       const systemPrompt = await this.loadPrompt(config.promptsDir);
       const filteredDiff = filterDiff(diff, config.ignorePatterns);
       const userMessage = buildUserMessage(filteredDiff);
-      const { content, usage } = await this.callApi(systemPrompt, userMessage, config);
+
+      // Use injected provider if supplied, otherwise default to Anthropic
+      const provider: LLMProvider =
+        config.provider ?? new AnthropicProvider(config.apiKey, config.model);
+
+      const { content, usage } = await provider.complete(systemPrompt, userMessage, {
+        model: config.model,
+        maxTokens: config.maxTokens,
+      });
+
       const findings = parseFindings(content, this.name);
+
       return {
         agentName: this.name,
         status: 'success',
@@ -48,49 +59,6 @@ export abstract class BaseAgent implements Agent {
   private async loadPrompt(promptsDir: string): Promise<string> {
     const filePath = join(promptsDir, `${this.promptFile}.md`);
     return readFile(filePath, 'utf-8');
-  }
-
-  private async callApi(
-    systemPrompt: string,
-    userMessage: string,
-    config: AgentConfig,
-  ): Promise<{ content: string; usage: TokenUsage }> {
-    const client = new Anthropic({ apiKey: config.apiKey, maxRetries: 3 });
-
-    const response = await client.messages.create({
-      model: config.model,
-      max_tokens: config.maxTokens,
-      system: [
-        {
-          type: 'text',
-          text: systemPrompt,
-          cache_control: { type: 'ephemeral' },
-        },
-      ],
-      messages: [{ role: 'user', content: userMessage }],
-    });
-
-    const textBlock = response.content.find((b) => b.type === 'text');
-    if (!textBlock || textBlock.type !== 'text') {
-      throw new Error(`Agent ${this.name} returned no text content`);
-    }
-
-    const u = response.usage as Anthropic.Usage & {
-      cache_read_input_tokens?: number;
-      cache_creation_input_tokens?: number;
-    };
-
-    const rawUsage = {
-      inputTokens: u.input_tokens,
-      outputTokens: u.output_tokens,
-      cacheReadTokens: u.cache_read_input_tokens ?? 0,
-      cacheWriteTokens: u.cache_creation_input_tokens ?? 0,
-    };
-
-    return {
-      content: textBlock.text,
-      usage: { ...rawUsage, estimatedCostUsd: computeCost(rawUsage, config.model) },
-    };
   }
 }
 
@@ -133,7 +101,6 @@ export function buildUserMessage(diff: Diff): string {
 }
 
 export function parseFindings(content: string, agentName: string): Finding[] {
-  // Extract first ```json ... ``` block; fall back to bare JSON parse
   const jsonMatch = content.match(/```json\s*([\s\S]*?)```/);
   const jsonStr = jsonMatch ? (jsonMatch[1] ?? '').trim() : content.trim();
 
@@ -150,7 +117,6 @@ export function parseFindings(content: string, agentName: string): Finding[] {
 
   console.warn(`[${agentName}] Findings failed schema validation: ${result.error.message}`);
 
-  // Partial recovery: keep individually valid items
   if (Array.isArray(parsed)) {
     const valid: Finding[] = [];
     for (const item of parsed) {

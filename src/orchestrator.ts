@@ -2,6 +2,7 @@ import type { Ora } from 'ora';
 import type { Agent } from './agents/base.js';
 import type { AgentConfig, AgentResult, Diff, RunConfig } from './types.js';
 import { zeroUsage } from './types.js';
+import { createProvider } from './providers/index.js';
 
 export interface OrchestratorOptions {
   /** If provided, the spinner text is updated as agents complete. */
@@ -16,12 +17,19 @@ export async function runAgents(
 ): Promise<AgentResult[]> {
   if (agents.length === 0) return [];
 
+  const provider = createProvider(config.providerName, {
+    anthropicApiKey: config.apiKey,
+    openaiApiKey: config.openaiApiKey,
+    model: config.model,
+  });
+
   const agentConfig: AgentConfig = {
     model: config.model,
     maxTokens: config.maxTokensPerAgent,
     apiKey: config.apiKey,
     promptsDir: config.promptsDir,
     ignorePatterns: config.ignorePatterns,
+    provider,
   };
 
   // Track which agents are still running so the spinner shows live status

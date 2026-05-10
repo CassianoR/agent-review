@@ -5,6 +5,9 @@ import { PerformanceAgent } from './performance.js';
 import { StyleAgent } from './style.js';
 import { TestsAgent } from './tests.js';
 import { DocsAgent } from './docs.js';
+import { DependencyAgent } from './dependency.js';
+import { AccessibilityAgent } from './accessibility.js';
+import { I18nAgent } from './i18n.js';
 
 const AGENT_REGISTRY: Record<AgentName, () => Agent> = {
   security: () => new SecurityAgent(),
@@ -12,6 +15,9 @@ const AGENT_REGISTRY: Record<AgentName, () => Agent> = {
   style: () => new StyleAgent(),
   tests: () => new TestsAgent(),
   docs: () => new DocsAgent(),
+  dependency: () => new DependencyAgent(),
+  accessibility: () => new AccessibilityAgent(),
+  i18n: () => new I18nAgent(),
 };
 
 export function buildAgents(names: AgentName[]): Agent[] {
