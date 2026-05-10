@@ -106,6 +106,8 @@ Options:
   --provider <name>          LLM backend: anthropic (default) or openai
   --fix                      Auto-apply suggestions for low/info findings (opt-in)
   --fix-severity <severity>  Maximum severity to auto-fix when --fix is used (default: low)
+  --fix-dry-run              Preview what --fix would change without writing to disk
+  --fix-verbose              Show full unified diff for every file changed by --fix
   -V, --version              Print version
   -h, --help                 Show help
 
@@ -169,19 +171,47 @@ Config is discovered by walking up directories from your current working directo
 
 ## `--fix` mode
 
-The `--fix` flag lets `agentreview` apply suggestions automatically for low-risk findings. It works like this:
+The `--fix` flag lets `agentreview` apply suggestions automatically for low-risk findings.
 
-1. After the review, eligible findings (severity ≤ `--fix-severity`, default `low`) are processed one at a time.
-2. For each finding, a focused LLM call asks the model to return the **entire file** with the fix applied inside a ` ```fix ``` ` block.
-3. If the model responds with `SKIP: <reason>`, the fix is skipped and the reason is logged.
-4. The patched file is written to disk only if the content actually changed.
+### How it works
 
-**Critical and high findings are always excluded** from auto-fix, regardless of the severity threshold. Automated changes to security-sensitive code require human review.
+1. Eligible findings (severity ≤ `--fix-severity`, default `low`) are **grouped by file**.
+2. For each file, a single LLM call addresses **all findings in that file at once** — cheaper and faster than one call per finding.
+3. Files are processed **in parallel** — the total time is roughly that of the slowest file, not the sum.
+4. The model returns the entire file with all fixes applied inside a ` ```fix ``` ` block.
+5. A **sanity check** rejects patches where the file shrank by more than 50 % (catches model truncation).
+6. The patched file is written to disk only if the content changed and all checks pass.
+
+**Critical and high findings are always excluded** regardless of the threshold — automated changes to security-sensitive code require human review.
+
+### Flags
 
 ```bash
-agentreview --fix                      # fix low + info only (default)
-agentreview --fix --fix-severity medium  # also fix medium (review the diff afterwards)
+agentreview --fix                        # fix low + info (default), write to disk
+agentreview --fix --fix-severity medium  # also fix medium severity
+agentreview --fix-dry-run                # preview what would change — nothing written
+agentreview --fix --fix-verbose          # apply and show the full unified diff
 ```
+
+### Output example
+
+```
+  ✓ src/auth.ts — 2 findings (+3 −5 lines)
+    · [low] naming:10
+    · [info] dead-code:44
+    @@ -8,7 +8,7 @@ ...
+
+  – src/utils.ts — 1 finding
+    · [low] style:22
+    Model returned unchanged content
+
+  ✓ 1/2 files patched (+3 −5 lines)  1 skipped
+  Run with --fix-verbose to see the full diff.
+```
+
+### When the model skips a fix
+
+If the model cannot safely apply all fixes in a file without side effects, it responds with `SKIP: <reason>` and the file is left untouched. The skip reason is shown in the output. In this case, review the finding manually or try running with a narrower `--agents` selection.
 
 ---
 
@@ -354,7 +384,7 @@ Then run: `agentreview --agents security,my-agent`
 git clone https://github.com/CassianoR/agent-review
 cd agent-review
 npm install
-npm test            # 76 tests, no API calls needed (all mocked)
+npm test            # 82 tests, no API calls needed (all mocked)
 npm run build       # produces dist/cli.js and dist/github-action.js
 npm run typecheck   # strict TypeScript, zero errors
 npm run dev -- --help   # run CLI locally with tsx

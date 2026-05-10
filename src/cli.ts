@@ -66,6 +66,14 @@ program
     '--fix-severity <severity>',
     'Maximum severity to auto-fix when --fix is used (default: low)',
   )
+  .option(
+    '--fix-dry-run',
+    'Preview what --fix would change without writing to disk',
+  )
+  .option(
+    '--fix-verbose',
+    'Show full unified diff for every file changed by --fix',
+  )
   .action(async (repoArg: string | undefined, flags: Record<string, string | boolean | undefined>) => {
     const cwd = repoArg ?? process.cwd();
     const spinner = ora({ color: 'cyan' });
@@ -179,32 +187,77 @@ program
         console.log('\n' + content);
       }
 
-      // ── 6. --fix mode ────────────────────────────────────────────────────
-      if (flags['fix']) {
+      // ── 6. --fix / --fix-dry-run mode ────────────────────────────────────
+      if (flags['fix'] || flags['fixDryRun']) {
         const fixSeverity = (flags['fixSeverity'] as Severity | undefined) ?? 'low';
-        const dryRun = false;
-        spinner.start(`Applying fixes for ${fixSeverity} and info findings…`);
-        const fixResults = await applyFixes(report.findings, config, {
-          repoRoot: gitRoot,
-          maxSeverity: fixSeverity,
-          dryRun,
-        });
-        spinner.stop();
+        const dryRun = flags['fixDryRun'] === true;
+        const verbose = flags['fixVerbose'] === true;
 
-        if (fixResults.length === 0) {
+        const fileCount = new Set(
+          report.findings
+            .filter((f) => f.severity !== 'critical' && f.severity !== 'high')
+            .map((f) => f.file),
+        ).size;
+
+        if (dryRun) {
+          console.log(chalk.cyan('\n🔍 --fix-dry-run: previewing changes (nothing will be written)\n'));
+        }
+
+        if (fileCount === 0) {
           console.log(chalk.dim('  No eligible findings to auto-fix.'));
         } else {
-          for (const r of fixResults) {
-            const icon =
-              r.status === 'applied' ? chalk.green('✓') :
-              r.status === 'skipped' ? chalk.yellow('–') :
-              chalk.red('✗');
-            const sev = SEV_COLOR[r.finding.severity](`[${r.finding.severity}]`);
-            console.log(`  ${icon} ${sev} ${chalk.bold(r.finding.file)} — ${r.finding.category}`);
-            if (r.reason) console.log(`    ${chalk.dim(r.reason)}`);
+          spinner.start(
+            `Fixing ${fileCount} file${fileCount !== 1 ? 's' : ''} in parallel (severity ≤ ${fixSeverity})…`,
+          );
+          const fixResults = await applyFixes(report.findings, config, {
+            repoRoot: gitRoot,
+            maxSeverity: fixSeverity,
+            dryRun,
+          });
+          spinner.stop();
+
+          if (fixResults.length === 0) {
+            console.log(chalk.dim('  No eligible findings to auto-fix.'));
+          } else {
+            console.log();
+            for (const r of fixResults) {
+              printFixResult(r, { dryRun, verbose });
+            }
+
+            const applied = fixResults.filter((r) => r.status === 'applied').length;
+            const skipped = fixResults.filter((r) => r.status === 'skipped').length;
+            const failed  = fixResults.filter((r) => r.status === 'failed').length;
+            const totalFindings = fixResults.reduce((n, r) => n + r.findings.length, 0);
+
+            console.log();
+            if (dryRun) {
+              console.log(
+                chalk.cyan(
+                  `  🔍 Dry run: ${applied} file${applied !== 1 ? 's' : ''} would be modified` +
+                  (skipped > 0 ? `, ${skipped} skipped` : '') +
+                  (failed > 0 ? `, ${failed} failed` : '') +
+                  ` (${totalFindings} finding${totalFindings !== 1 ? 's' : ''} across ${fixResults.length} file${fixResults.length !== 1 ? 's' : ''})`,
+                ),
+              );
+              console.log(chalk.dim('  Re-run without --fix-dry-run to apply these changes.'));
+            } else {
+              const linesAdded   = fixResults.reduce((n, r) => n + (r.linesAdded   ?? 0), 0);
+              const linesRemoved = fixResults.reduce((n, r) => n + (r.linesRemoved ?? 0), 0);
+              console.log(
+                chalk.green(
+                  `  ✓ ${applied}/${fixResults.length} file${fixResults.length !== 1 ? 's' : ''} patched` +
+                  (linesAdded + linesRemoved > 0
+                    ? chalk.dim(` (+${linesAdded} −${linesRemoved} lines)`)
+                    : ''),
+                ) +
+                (skipped > 0 ? chalk.yellow(`  ${skipped} skipped`) : '') +
+                (failed  > 0 ? chalk.red(`  ${failed} failed`)   : ''),
+              );
+              if (!verbose && applied > 0) {
+                console.log(chalk.dim('  Run with --fix-verbose to see the full diff.'));
+              }
+            }
           }
-          const applied = fixResults.filter((r) => r.status === 'applied').length;
-          console.log(chalk.green(`\n  ✓ ${applied}/${fixResults.length} fix${applied !== 1 ? 'es' : ''} applied`));
         }
       }
 
@@ -268,6 +321,68 @@ program
 program.parse();
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+function printFixResult(
+  r: import('./fixer.js').FixResult,
+  opts: { dryRun: boolean; verbose: boolean },
+): void {
+  const icon =
+    r.status === 'applied' ? chalk.green('✓') :
+    r.status === 'skipped' ? chalk.yellow('–') :
+    chalk.red('✗');
+
+  const findingCount = r.findings.length;
+  const stats =
+    r.linesAdded !== undefined && r.linesRemoved !== undefined
+      ? chalk.dim(` (+${r.linesAdded} −${r.linesRemoved} lines)`)
+      : '';
+
+  console.log(
+    `  ${icon} ${chalk.bold(r.relPath || r.filePath)} — ` +
+    `${findingCount} finding${findingCount !== 1 ? 's' : ''}` +
+    stats,
+  );
+
+  // List the individual findings addressed
+  for (const f of r.findings) {
+    const loc = f.line !== null ? `:${f.line}` : '';
+    console.log(
+      `    ${chalk.dim('·')} ${SEV_COLOR[f.severity](`[${f.severity}]`)} ` +
+      `${chalk.dim(f.category)}${chalk.dim(loc)}`,
+    );
+  }
+
+  if (r.reason) {
+    console.log(`    ${chalk.dim(r.reason)}`);
+  }
+
+  // Show the unified diff when requested
+  if (r.patch && (opts.dryRun || opts.verbose)) {
+    console.log();
+    printUnifiedDiff(r.patch);
+  }
+
+  console.log();
+}
+
+function printUnifiedDiff(patch: string): void {
+  for (const line of patch.split('\n')) {
+    if (line.startsWith('+++') || line.startsWith('---')) {
+      console.log(chalk.dim(`    ${line}`));
+    } else if (line.startsWith('@@')) {
+      console.log(chalk.cyan(`    ${line}`));
+    } else if (line.startsWith('+')) {
+      console.log(chalk.green(`    ${line}`));
+    } else if (line.startsWith('-')) {
+      console.log(chalk.red(`    ${line}`));
+    } else if (line.startsWith('\\')) {
+      // "\ No newline at end of file" marker
+      console.log(chalk.dim(`    ${line}`));
+    } else {
+      console.log(chalk.dim(`    ${line}`));
+    }
+  }
+}
 
 function printFindingsSummary(findings: import('./types.js').Finding[]): void {
   if (findings.length === 0) {
