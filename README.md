@@ -272,10 +272,12 @@ jobs:
 
 The `packages/vscode/` directory contains a VS Code extension that runs `agentreview` and shows findings as inline squiggles and Problems panel entries — no terminal needed.
 
+Because it targets the standard VS Code extension API, it works in any VS Code-compatible IDE: **VS Code**, **Google Antigravity**, **Cursor**, **Windsurf**, **Gitpod**, and similar environments. It coexists with other extensions including GitHub Copilot.
+
 ### Usage
 
 1. Install the `agentreview` CLI globally: `npm install -g agentreview`
-2. Open a git repository in VS Code.
+2. Open a git repository in your editor.
 3. Run **agentreview: Review diff against base branch** from the Command Palette (`Ctrl/Cmd+Shift+P`).
 4. Findings appear immediately as squiggles in the editor and entries in the Problems panel.
 
