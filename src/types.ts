@@ -107,6 +107,8 @@ export interface AgentConfig {
   apiKey: string;
   promptsDir: string;
   ignorePatterns: string[];
+  /** Injected LLM provider. When omitted, BaseAgent creates an AnthropicProvider. */
+  provider?: import('./providers/base.js').LLMProvider;
 }
 
 // ── Agent Result ──────────────────────────────────────────────────────────────
@@ -124,9 +126,26 @@ export interface AgentResult {
 
 // ── Run Config ────────────────────────────────────────────────────────────────
 
-export type AgentName = 'security' | 'performance' | 'style' | 'tests' | 'docs';
+export type AgentName =
+  | 'security'
+  | 'performance'
+  | 'style'
+  | 'tests'
+  | 'docs'
+  | 'dependency'
+  | 'accessibility'
+  | 'i18n';
 
-export const AGENT_NAMES: AgentName[] = ['security', 'performance', 'style', 'tests', 'docs'];
+export const AGENT_NAMES: AgentName[] = [
+  'security',
+  'performance',
+  'style',
+  'tests',
+  'docs',
+  'dependency',
+  'accessibility',
+  'i18n',
+];
 
 export interface RunConfig {
   base: string;
@@ -139,6 +158,10 @@ export interface RunConfig {
   failOn: Severity | 'never';
   apiKey: string;
   promptsDir: string;
+  /** Which LLM backend to use. Defaults to 'anthropic'. */
+  providerName: import('./providers/base.js').ProviderName;
+  /** OpenAI API key — only required when providerName is 'openai'. */
+  openaiApiKey?: string;
 }
 
 // ── Review Report ─────────────────────────────────────────────────────────────

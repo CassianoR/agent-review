@@ -1,0 +1,64 @@
+name: 'agentreview'
+description: 'Multi-agent AI code review powered by Anthropic Claude. Posts findings as PR review comments.'
+author: 'agentreview'
+
+branding:
+  icon: 'eye'
+  color: 'blue'
+
+inputs:
+  anthropic-api-key:
+    description: 'Anthropic API key (ANTHROPIC_API_KEY). Store as a repository secret.'
+    required: true
+
+  openai-api-key:
+    description: 'OpenAI API key. Required only when provider is "openai".'
+    required: false
+    default: ''
+
+  provider:
+    description: 'LLM provider to use: "anthropic" (default) or "openai".'
+    required: false
+    default: 'anthropic'
+
+  agents:
+    description: 'Comma-separated list of agents to run. Default: all agents.'
+    required: false
+    default: 'security,performance,style,tests,docs,dependency,accessibility,i18n'
+
+  base-ref:
+    description: 'Git ref to diff against. Defaults to the PR base branch.'
+    required: false
+    default: ''
+
+  model:
+    description: 'Claude model to use (e.g. claude-sonnet-4-6, claude-opus-4-7).'
+    required: false
+    default: 'claude-sonnet-4-6'
+
+  fail-on:
+    description: 'Exit with code 1 if findings at or above this severity exist (critical|high|medium|low|never).'
+    required: false
+    default: 'critical'
+
+  post-comments:
+    description: 'Post findings as inline PR review comments (requires GITHUB_TOKEN).'
+    required: false
+    default: 'true'
+
+  github-token:
+    description: 'GitHub token for posting PR comments. Defaults to the automatic GITHUB_TOKEN.'
+    required: false
+    default: '${{ github.token }}'
+
+outputs:
+  findings-count:
+    description: 'Total number of unique findings after synthesis.'
+  has-critical:
+    description: '"true" if any critical findings were found, "false" otherwise.'
+  report-json:
+    description: 'Path to the JSON report file written to the runner.'
+
+runs:
+  using: 'node20'
+  main: 'dist/github-action.js'

@@ -32,9 +32,18 @@
     "simple-git": "^3.27.0",
     "zod": "^3.23.8"
   },
+  "peerDependencies": {
+    "openai": ">=4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "openai": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@types/micromatch": "^4.0.9",
     "@types/node": "^22.0.0",
+    "openai": "^4.0.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
     "@vitest/coverage-v8": "^2.1.0",

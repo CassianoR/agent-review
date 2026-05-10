@@ -4,17 +4,19 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AgentName, RunConfig, Severity } from './types.js';
 import { AGENT_NAMES } from './types.js';
+import type { ProviderName } from './providers/base.js';
 
 // ── Defaults ──────────────────────────────────────────────────────────────────
 
 const DEFAULTS = {
   base: 'origin/main',
-  agents: ['security', 'performance', 'style', 'tests', 'docs'] as AgentName[],
+  agents: ['security', 'performance', 'style', 'tests', 'docs', 'dependency', 'accessibility', 'i18n'] as AgentName[],
   model: 'claude-sonnet-4-6',
   maxTokensPerAgent: 4000,
   ignorePatterns: ['**/*.lock', '**/dist/**', '**/node_modules/**', '**/*.min.js'],
   jsonOutput: false,
   failOn: 'critical' as Severity | 'never',
+  providerName: 'anthropic' as ProviderName,
 } as const;
 
 // ── RC file shape ─────────────────────────────────────────────────────────────
@@ -25,6 +27,7 @@ interface RcFile {
   model?: string;
   maxTokensPerAgent?: number;
   ignorePatterns?: string[];
+  provider?: string;
 }
 
 export interface CliFlags {
@@ -33,6 +36,8 @@ export interface CliFlags {
   output?: string;
   json?: boolean;
   failOn?: string;
+  provider?: string;
+  fix?: boolean;
 }
 
 // ── RC discovery ──────────────────────────────────────────────────────────────
@@ -63,22 +68,20 @@ export function resolvePromptsDir(): string {
 // ── Main merge ────────────────────────────────────────────────────────────────
 
 export async function resolveConfig(cwd: string, flags: CliFlags): Promise<RunConfig> {
-  const apiKey = process.env['ANTHROPIC_API_KEY'];
-  if (!apiKey) {
-    throw new Error(
-      'ANTHROPIC_API_KEY environment variable is not set.\n' +
-        'Export it before running: export ANTHROPIC_API_KEY=sk-ant-...',
-    );
-  }
+  const providerName = parseProviderName(
+    flags.provider ?? process.env['AGENTREVIEW_PROVIDER'],
+  );
+
+  // Validate API key for the selected provider
+  const apiKey = requireApiKey(providerName);
 
   const rc = (await findRcFile(cwd)) ?? {};
-
   const agentsRaw = flags.agents ?? rc.agents?.join(',') ?? DEFAULTS.agents.join(',');
 
   return {
     base: flags.base ?? rc.base ?? DEFAULTS.base,
     agents: parseAgentList(agentsRaw),
-    model: process.env['AGENTREVIEW_MODEL'] ?? rc.model ?? DEFAULTS.model,
+    model: resolveModel(providerName, rc.model),
     maxTokensPerAgent: rc.maxTokensPerAgent ?? DEFAULTS.maxTokensPerAgent,
     ignorePatterns: rc.ignorePatterns ?? [...DEFAULTS.ignorePatterns],
     output: flags.output,
@@ -86,7 +89,48 @@ export async function resolveConfig(cwd: string, flags: CliFlags): Promise<RunCo
     failOn: (flags.failOn as Severity | 'never') ?? DEFAULTS.failOn,
     apiKey,
     promptsDir: resolvePromptsDir(),
+    providerName,
+    openaiApiKey: process.env['OPENAI_API_KEY'],
   };
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function parseProviderName(raw?: string): ProviderName {
+  if (!raw) return DEFAULTS.providerName;
+  if (raw === 'anthropic' || raw === 'openai') return raw;
+  throw new Error(`Unknown provider "${raw}". Valid values: anthropic, openai`);
+}
+
+function requireApiKey(provider: ProviderName): string {
+  if (provider === 'anthropic') {
+    const key = process.env['ANTHROPIC_API_KEY'];
+    if (!key) {
+      throw new Error(
+        'ANTHROPIC_API_KEY environment variable is not set.\n' +
+          'Export it before running: export ANTHROPIC_API_KEY=sk-ant-...',
+      );
+    }
+    return key;
+  }
+  if (provider === 'openai') {
+    const key = process.env['OPENAI_API_KEY'];
+    if (!key) {
+      throw new Error(
+        'OPENAI_API_KEY environment variable is not set.\n' +
+          'Export it before running: export OPENAI_API_KEY=sk-...',
+      );
+    }
+    return key;
+  }
+  // exhaustive guard
+  throw new Error(`Unhandled provider: ${String(provider)}`);
+}
+
+function resolveModel(provider: ProviderName, rcModel?: string): string {
+  if (rcModel) return rcModel;
+  if (process.env['AGENTREVIEW_MODEL']) return process.env['AGENTREVIEW_MODEL'];
+  return provider === 'openai' ? 'gpt-4o' : DEFAULTS.model;
 }
 
 function parseAgentList(raw: string): AgentName[] {

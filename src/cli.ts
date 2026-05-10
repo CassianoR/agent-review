@@ -8,6 +8,7 @@ import { buildAgents } from './agents/index.js';
 import { runAgents } from './orchestrator.js';
 import { synthesize } from './synthesizer.js';
 import { renderMarkdown, renderJson, writeReport, buildMarkdownFromScratch } from './reporter.js';
+import { applyFixes } from './fixer.js';
 import type { Severity } from './types.js';
 import { SEVERITY_ORDER } from './types.js';
 
@@ -45,13 +46,25 @@ program
   .option('-b, --base <ref>', 'Base git ref to diff against (e.g. origin/main, HEAD~3)')
   .option(
     '-a, --agents <names>',
-    'Comma-separated list of agents to run: security,performance,style,tests,docs',
+    'Comma-separated list of agents to run: security,performance,style,tests,docs,dependency,accessibility,i18n',
   )
   .option('-o, --output <file>', 'Also write the report to a file')
   .option('--json', 'Output machine-readable JSON instead of Markdown')
   .option(
     '--fail-on <severity>',
     'Exit with code 1 if any finding meets or exceeds this severity (critical|high|medium|low|never)',
+  )
+  .option(
+    '--provider <name>',
+    'LLM backend to use: anthropic (default) or openai',
+  )
+  .option(
+    '--fix',
+    'Auto-apply suggestions for low/info severity findings (opt-in, rewrites files)',
+  )
+  .option(
+    '--fix-severity <severity>',
+    'Maximum severity to auto-fix when --fix is used (default: low)',
   )
   .action(async (repoArg: string | undefined, flags: Record<string, string | boolean | undefined>) => {
     const cwd = repoArg ?? process.cwd();
@@ -66,9 +79,10 @@ program
         output: flags['output'] as string | undefined,
         json: flags['json'] as boolean | undefined,
         failOn: flags['failOn'] as string | undefined,
+        provider: flags['provider'] as string | undefined,
       });
       spinner.succeed(
-        `Config: base=${chalk.bold(config.base)}  agents=${chalk.bold(config.agents.join(','))}  model=${chalk.bold(config.model)}`,
+        `Config: base=${chalk.bold(config.base)}  agents=${chalk.bold(config.agents.join(','))}  model=${chalk.bold(config.model)}  provider=${chalk.bold(config.providerName)}`,
       );
 
       // ── 2. Git diff ───────────────────────────────────────────────────────
@@ -165,7 +179,36 @@ program
         console.log('\n' + content);
       }
 
-      // ── 6. Cost summary ───────────────────────────────────────────────────
+      // ── 6. --fix mode ────────────────────────────────────────────────────
+      if (flags['fix']) {
+        const fixSeverity = (flags['fixSeverity'] as Severity | undefined) ?? 'low';
+        const dryRun = false;
+        spinner.start(`Applying fixes for ${fixSeverity} and info findings…`);
+        const fixResults = await applyFixes(report.findings, config, {
+          repoRoot: gitRoot,
+          maxSeverity: fixSeverity,
+          dryRun,
+        });
+        spinner.stop();
+
+        if (fixResults.length === 0) {
+          console.log(chalk.dim('  No eligible findings to auto-fix.'));
+        } else {
+          for (const r of fixResults) {
+            const icon =
+              r.status === 'applied' ? chalk.green('✓') :
+              r.status === 'skipped' ? chalk.yellow('–') :
+              chalk.red('✗');
+            const sev = SEV_COLOR[r.finding.severity](`[${r.finding.severity}]`);
+            console.log(`  ${icon} ${sev} ${chalk.bold(r.finding.file)} — ${r.finding.category}`);
+            if (r.reason) console.log(`    ${chalk.dim(r.reason)}`);
+          }
+          const applied = fixResults.filter((r) => r.status === 'applied').length;
+          console.log(chalk.green(`\n  ✓ ${applied}/${fixResults.length} fix${applied !== 1 ? 'es' : ''} applied`));
+        }
+      }
+
+      // ── 7. Cost summary ───────────────────────────────────────────────────
       const u = report.totalUsage;
       console.log(
         chalk.dim(

@@ -1,0 +1,115 @@
+{
+  "name": "agentreview-vscode",
+  "displayName": "agentreview",
+  "description": "Multi-agent AI code review powered by Anthropic Claude — inline finding annotations",
+  "version": "0.1.0",
+  "publisher": "agentreview",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YOUR_GITHUB_USERNAME/agentreview"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Linters", "Other"],
+  "keywords": ["ai", "code review", "anthropic", "claude", "lint"],
+  "icon": "images/icon.png",
+  "activationEvents": ["onStartupFinished"],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "agentreview.reviewDiff",
+        "title": "agentreview: Review diff against base branch",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "agentreview.clearDiagnostics",
+        "title": "agentreview: Clear all findings",
+        "icon": "$(clear-all)"
+      }
+    ],
+    "configuration": {
+      "title": "agentreview",
+      "properties": {
+        "agentreview.anthropicApiKey": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Anthropic API key (`ANTHROPIC_API_KEY`). Alternatively, set the environment variable before launching VS Code.",
+          "order": 1
+        },
+        "agentreview.openaiApiKey": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "OpenAI API key. Required only when `agentreview.provider` is `openai`.",
+          "order": 2
+        },
+        "agentreview.provider": {
+          "type": "string",
+          "enum": ["anthropic", "openai"],
+          "default": "anthropic",
+          "description": "LLM provider to use for reviews.",
+          "order": 3
+        },
+        "agentreview.model": {
+          "type": "string",
+          "default": "claude-sonnet-4-6",
+          "description": "Model name (e.g. claude-sonnet-4-6, gpt-4o).",
+          "order": 4
+        },
+        "agentreview.agents": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["security", "performance", "style", "tests", "docs", "dependency", "accessibility", "i18n"]
+          },
+          "default": ["security", "performance", "style", "tests", "docs", "dependency", "accessibility", "i18n"],
+          "description": "Agents to run during a review.",
+          "order": 5
+        },
+        "agentreview.baseRef": {
+          "type": "string",
+          "default": "",
+          "description": "Git ref to diff against. Defaults to the tracked upstream branch or origin/main.",
+          "order": 6
+        },
+        "agentreview.cliPath": {
+          "type": "string",
+          "default": "agentreview",
+          "description": "Path to the agentreview CLI binary. Defaults to the globally installed binary.",
+          "order": 7
+        },
+        "agentreview.autoReviewOnSave": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically run a review whenever you save a file (expensive — disabled by default).",
+          "order": 8
+        }
+      }
+    },
+    "menus": {
+      "editor/title": [
+        {
+          "command": "agentreview.reviewDiff",
+          "group": "navigation",
+          "when": "resourceScheme == file"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "build": "esbuild src/extension.ts --bundle --outdir=dist --platform=node --external:vscode --format=cjs --sourcemap",
+    "watch": "esbuild src/extension.ts --bundle --outdir=dist --platform=node --external:vscode --format=cjs --sourcemap --watch",
+    "typecheck": "tsc --noEmit",
+    "package": "vsce package",
+    "publish": "vsce publish"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.0.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.8.0"
+  }
+}
